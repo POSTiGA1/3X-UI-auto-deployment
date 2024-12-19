@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # wget -N https://git && bash .sh d
 export DEBIAN_FRONTEND=noninteractive
+defaults_file="/usr/local/reverse_proxy/reinstall_defaults.conf"
 
 ###################################
 ### Initialization and Declarations
@@ -24,8 +25,6 @@ regex[domain_port]="^[a-zA-Z0-9]+([-.][a-zA-Z0-9]+)*\.[a-zA-Z]{2,}(:[1-9][0-9]*)
 regex[file_path]="^[a-zA-Z0-9_/.-]+$"
 regex[url]="^(http|https)://([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(:[0-9]{1,5})?(/.*)?$"
 generate[path]="tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 30"
-
-defaults_file="/usr/local/reverse_proxy/reinstall_defaults.conf"
 
 ###################################
 ### INFO
@@ -222,14 +221,12 @@ R[85]=""
 ###################################
 show_help() {
   echo
-  echo "Usage: reverse_proxy_server.sh [-g|--generate <true|false>] [-u|--utils <true|false>] [-d|--dns <true|false>]"
-  echo "       [-a|--addu <true|false>] [-r|--autoupd <true|false>] [-b|--bbr <true|false>] [-i|--ipv6 <true|false>]"
-  echo "       [-w|--warp <true|false>] [-c|--cert <true|false>] [-m|--mon <true|false>] [-x|--shell <true|false>]"
-  echo "       [-n|--nginx <true|false>] [-p|--panel <true|false>] [-f|--firewall <true|false>] [-s|--ssh <true|false>]"
-  echo "       [-t|--tgbot <true|false>] [-h|--help]"
+  echo "Usage: reverse_proxy_server.sh [-u|--utils <true|false>] [-d|--dns <true|false>] [-a|--addu <true|false>]"
+  echo "       [-r|--autoupd <true|false>] [-b|--bbr <true|false>] [-i|--ipv6 <true|false>] [-w|--warp <true|false>]"
+  echo "       [-c|--cert <true|false>] [-m|--mon <true|false>] [-n|--nginx <true|false>] [-p|--panel <true|false>]"
+  echo "       [-f|--firewall <true|false>] [-s|--ssh <true|false>] [-t|--tgbot <true|false>] [-g|--generate <true|false>]"
+  echo "       [-x|--skip-check <true|false>] [-h|--help]"
   echo
-  echo "  -g, --generate <true|false>    Generate a random string for configuration       (default: ${defaults[generate]})"
-  echo "                                 Генерация случайных путей для конфигурации"
   echo "  -u, --utils <true|false>       Additional utilities                             (default: ${defaults[utils]})"
   echo "                                 Дополнительные утилиты"
   echo "  -d, --dns <true|false>         DNS encryption                                   (default: ${defaults[dns]})"
@@ -260,7 +257,11 @@ show_help() {
   echo "                                 SSH доступ"
   echo "  -t, --tgbot <true|false>       Telegram bot integration                         (default: ${defaults[tgbot]})"
   echo "                                 Интеграция Telegram бота"
-  echo "  -h, --help                     Display this help message                        "
+  echo "  -g, --generate <true|false>    Generate a random string for configuration       (default: ${defaults[generate]})"
+  echo "                                 Генерация случайных путей для конфигурации"
+  echo "  -x, --skip-check <true|false>  Disable the check functionality                  (default: ${defaults[skip-check]})"
+  echo "                                 Отключение проверки"
+  echo "  -h, --help                     Display this help message"
   echo "                                 Показать это сообщение помощи"
   echo
   exit 0
@@ -279,7 +280,6 @@ read_defaults_from_file() {
     done < $defaults_file
   else
     # Если файл не найден, используем значения по умолчанию
-    defaults[generate]=true
     defaults[utils]=true
     defaults[dns]=true
     defaults[addu]=true
@@ -295,6 +295,8 @@ read_defaults_from_file() {
     defaults[firewall]=true
     defaults[ssh]=true
     defaults[tgbot]=false
+    defaults[generate]=true
+    defaults[skip-check]=false
   fi
 }
 
@@ -303,7 +305,6 @@ read_defaults_from_file() {
 ###################################
 write_defaults_to_file() {
   cat > ${defaults_file}<<EOF
-defaults[generate]=true
 defaults[utils]=false
 defaults[dns]=false
 defaults[addu]=false
@@ -319,6 +320,8 @@ defaults[panel]=true
 defaults[firewall]=false
 defaults[ssh]=false
 defaults[tgbot]=false
+defaults[generate]=true
+defaults[skip-check]=false
 EOF
 }
 
@@ -355,7 +358,7 @@ validate_true_false() {
 ###################################
 parse_args() {
   local opts
-  opts=$(getopt -o i:w:m:u:s:t:f:a:r:b:hl:d:p:c:n:g --long utils:,dns:,addu:,autoupd:,bbr:,ipv6:,warp:,cert:,mon:,nginx:,panel:,firewall:,ssh:,tgbot:,generate:,help -- "$@")
+  opts=$(getopt -o i:w:m:u:s:t:f:a:r:b:hl:d:p:c:n:g:x --long utils:,dns:,addu:,autoupd:,bbr:,ipv6:,warp:,cert:,mon:,nginx:,panel:,firewall:,ssh:,tgbot:,generate:,skip-check:,help -- "$@")
   if [[ $? -ne 0 ]]; then
     return 1
   fi
@@ -416,12 +419,6 @@ parse_args() {
         validate_true_false mon "$2" || return 1
         shift 2
         ;;
-      -x|--shell)
-        args[shell]="$2"
-        normalize_case shell
-        validate_true_false shell "$2" || return 1
-        shift 2
-        ;;	
       -n|--nginx)
         args[nginx]="$2"
         normalize_case nginx
@@ -456,6 +453,12 @@ parse_args() {
         args[generate]="$2"
         normalize_case generate
         validate_true_false generate "$2" || return 1
+        shift 2
+        ;;
+      -x|--skip-check)
+        args[skip-check]="$2"
+        normalize_case skip-check
+        validate_true_false skip-check "$2" || return 1
         shift 2
         ;;
       -h|--help)
@@ -581,27 +584,6 @@ check_root() {
 }
 
 ###################################
-### IP Address Check
-###################################
-check_ip() {
-  IP4_REGEX="^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$"
-
-  # Попробуем получить IP через ip route
-  IP4=$(ip route get 8.8.8.8 2>/dev/null | grep -Po -- 'src \K\S*')
-
-  # Если не получилось, пробуем через curl
-  if [[ ! $IP4 =~ $IP4_REGEX ]]; then
-  IP4=$(curl -s --max-time 5 ipinfo.io/ip 2>/dev/null)  # Устанавливаем таймаут для curl
-  fi
-
-  # Если не удается получить IP, выводим ошибку
-  if [[ ! $IP4 =~ $IP4_REGEX ]]; then
-    error " $(text 3)"
-    return 1
-  fi
-}
-
-###################################
 ### Banner
 ###################################
 banner_1() {
@@ -633,6 +615,23 @@ start_installation() {
 }
 
 ###################################
+### Obtaining your external IP address
+###################################
+check_ip() {
+    IP4_REGEX="^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$"
+    IP4=$(ip route get 8.8.8.8 2>/dev/null | grep -Po -- 'src \K\S*')
+
+    if [[ ! $IP4 =~ $IP4_REGEX ]]; then
+        IP4=$(curl -s --max-time 5 ipinfo.io/ip 2>/dev/null)
+    fi
+
+    if [[ ! $IP4 =~ $IP4_REGEX ]]; then
+      echo "Не удалось получить внешний IP."
+      return 1
+    fi
+}
+
+###################################
 ### Request and response from Cloudflare API
 ###################################
 get_test_response() {
@@ -655,17 +654,15 @@ check_cf_token() {
     SUBDOMAIN=""
 
     while [[ -z "$temp_domain" ]]; do
-        reading " $(text 13) " temp_domain
-        echo
+      reading " $(text 13) " temp_domain
+      echo
     done
 
-    # Удаляем http:// или https:// (если они есть), порты и пути
     temp_domain=$(echo "$temp_domain" | sed -E 's/^https?:\/\///' | sed -E 's/(:[0-9]+)?(\/[a-zA-Z0-9_\-\/]+)?$//')
 
-    # Проверка на наличие домена третьего уровня (например, grf.x.com)
     if [[ "$temp_domain" =~ ${regex[domain]} ]]; then
       SUBDOMAIN="$temp_domain"           # Весь домен сохраняем в SUBDOMAIN
-      DOMAIN="${BASH_REMATCH[2]}"        # Извлекаем домен второго уровня (x.com)
+      DOMAIN="${BASH_REMATCH[2]}"        # Извлекаем домен второго уровня
     else
       DOMAIN="$temp_domain"              # Если это домен второго уровня, то просто сохраняем
       SUBDOMAIN="www.$temp_domain"       # Для домена второго уровня подставляем www в SUBDOMAIN
@@ -679,7 +676,8 @@ check_cf_token() {
     while [[ -z $CFTOKEN ]]; do
       reading " $(text 16) " CFTOKEN
     done
-    get_test_response
+
+    [[ ${args[skip-check]} == "false" ]] && get_test_response
     info " $(text 17) "
   done
 }
@@ -1602,19 +1600,13 @@ server {
   if (\$ssl_server_name !~* ^(.+\.)?${DOMAIN}\$ ) {set \$safe "\${safe}0"; }
   if (\$safe = 10){return 444;}
   if (\$request_uri ~ "(\"|'|\`|~|,|:|--|;|%|\\$|&&|\?\?|0x00|0X00|\||\\|\{|\}|\[|\]|<|>|\.\.\.|\.\.\/|\/\/\/)"){set \$hack 1;}
-  error_page 400 401 402 403 500 501 502 503 504 =404 /404;
+  error_page 400 402 403 500 501 502 503 504 =404 /404;
   proxy_intercept_errors on;
 
   if (\$host = ${IP4}) {
     return 444;
   }
-  location / {
-    if (\$hack = 1) {return 404;}
-    auth_basic "Restricted Area";
-    auth_basic_user_file /etc/nginx/.htpasswd;
-  }
-  ${COMMENT_METRIC}
-  ${COMMENT_SHELLBOX}
+  # PANEL
   location /${WEB_BASE_PATH} {
     if (\$hack = 1) {return 404;}
     proxy_redirect off;
@@ -1627,6 +1619,7 @@ server {
     proxy_pass http://127.0.0.1:36075/${WEB_BASE_PATH};
     break;
   }
+  # SUB
   location /${SUB_PATH} {
     if (\$hack = 1) {return 404;}
     proxy_redirect off;
@@ -1636,6 +1629,7 @@ server {
     proxy_pass http://127.0.0.1:36074/${SUB_PATH};
     break;
   }
+  # SUB JSON
   location /${SUB_JSON_PATH} {
     if (\$hack = 1) {return 404;}
     proxy_redirect off;
@@ -1645,12 +1639,14 @@ server {
     proxy_pass http://127.0.0.1:36074/${SUB_JSON_PATH};
     break;
   }
+  # SPLIT
   location /${CDNSPLIT} {
     if (\$hack = 1) {return 404;}
     proxy_pass http://127.0.0.1:2063;
     proxy_http_version 1.1;
     proxy_redirect off;
   }
+  # GRPC WEBSOCKET HTTPUpgrade
   location ~ ^/(?<fwdport>\d+)/(?<fwdpath>.*)\$ {
     if (\$hack = 1) {return 404;}
     client_max_body_size 0;
@@ -1674,6 +1670,11 @@ server {
     proxy_pass http://127.0.0.1:\$fwdport\$is_args\$args;
     break;
   }
+  # Node exporter
+  ${COMMENT_METRIC}
+  # SHELLBOX
+  ${COMMENT_SHELLBOX}
+  # Adguard Home
   ${COMMENT_AGH}
 }
 EOF
@@ -2247,9 +2248,9 @@ main() {
   log_entry
   read_defaults_from_file
   parse_args "$@" || show_help
-  check_root
-  check_ip
+  [[ ${args[skip-check]} == "false" ]] && check_root
   check_operating_system
+  [[ ${args[skip-check]} == "false" ]] && check_ip
   select_language
   if [ -f ${defaults_file} ]; then
     tilda "$(text 4)"
@@ -2257,7 +2258,7 @@ main() {
   sleep 2
   clear
   banner_1
-  start_installation
+  [[ ${args[skip-check]} == "false" ]] && start_installation
   data_entry
   [[ ${args[utils]} == "true" ]] && installation_of_utilities
   [[ ${args[dns]} == "true" ]] && dns_encryption
